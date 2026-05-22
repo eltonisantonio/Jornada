@@ -306,11 +306,14 @@ function prazoInfo(des){
   if(!des||des==='—')return{cls:'',lbl:'',limDate:null};
   try{
     const lim=prazoHomolog(des);if(!lim)return{cls:'',lbl:'',limDate:null};
-    const diff=Math.ceil((lim-new Date())/(864e5));
-    const limStr=lim.toLocaleDateString('pt-BR');
-    if(diff<0)return{cls:'pve',lbl:`⚠ Homolog. vencida há ${Math.abs(diff)}d (limite: ${limStr})`,limDate:lim};
-    if(diff===0)return{cls:'pal',lbl:`⚠ Homolog. vence hoje! (${limStr})`,limDate:lim};
-    if(diff<=3)return{cls:'pal',lbl:`⚠ Homolog. em ${diff}d (${limStr})`,limDate:lim};
+    // Comparar apenas datas (ignorar horário) para evitar bug de "hoje = atraso"
+    const hoje=new Date();hoje.setHours(0,0,0,0);
+    const limDay=new Date(lim);limDay.setHours(0,0,0,0);
+    const diff=Math.ceil((limDay-hoje)/(864e5));
+    const limStr=limDay.toLocaleDateString('pt-BR');
+    if(diff<0)return{cls:'pve',lbl:`⚠ Prazo vencido há ${Math.abs(diff)}d (limite: ${limStr})`,limDate:lim};
+    if(diff===0)return{cls:'pal',lbl:`⚠ Prazo vence hoje (${limStr})`,limDate:lim};
+    if(diff<=3)return{cls:'pal',lbl:`⚠ ${diff}d para homologar (até ${limStr})`,limDate:lim};
     return{cls:'pok',lbl:`Homolog. até ${limStr}`,limDate:lim};
   }catch{return{cls:'',lbl:'',limDate:null};}
 }
@@ -594,8 +597,8 @@ function renderNewModal(){
         <div class="tab ${t==='itens'?'active':''}" data-mtab="itens">2. Itens</div>
       </div>
       ${t==='dados'?`
-      <div class="fr"><div class="fi"><label>Nome *</label><input type="text" id="fn" value="${esc(f.nome)}" placeholder="Nome completo"/></div><div class="fi"><label>Cargo *</label><input type="text" id="fc" value="${esc(f.cargo)}" placeholder="Cargo"/></div></div>
-      <div class="fr"><div class="fi"><label>Departamento</label><input type="text" id="fd" value="${esc(f.depto)}" placeholder="Setor/Área"/></div><div class="fi"></div></div>
+      <div class="fr"><div class="fi"><label>Nome *</label><input type="text" id="fn" value="${esc(f.nome)}" placeholder="NOME COMPLETO" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"/></div><div class="fi"><label>Cargo *</label><input type="text" id="fc" value="${esc(f.cargo)}" placeholder="CARGO" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"/></div></div>
+      <div class="fr"><div class="fi"><label>Departamento</label><input type="text" id="fd" value="${esc(f.depto)}" placeholder="SETOR/ÁREA" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"/></div><div class="fi"></div></div>
       <div class="fr"><div class="fi"><label>Data Admissão</label><input type="date" id="fa" value="${f.admissao}"/></div><div class="fi"><label>Data Desligamento</label><input type="date" id="fdes" value="${f.desligamento}"/></div></div>
       <div class="fi" style="margin-bottom:14px"><label>Tipo de Desligamento *</label>
         <div class="tg">${['Pedido de Demissão','Demissão Sem Justa Causa','Demissão Por Justa Causa','Término de Contrato de Experiência','Acordo Consensual'].map(tp=>`<div class="to ${f.tipo===tp?'active':''}" data-tipo="${tp}">${tp}</div>`).join('')}</div>
@@ -886,7 +889,7 @@ function bindApp(){
   if(g('msave'))g('msave').onclick=async()=>{
     saveFForm();const f=S.nf;if(!f.nome||!f.tipo){alert('Nome e Tipo são obrigatórios.');return;}
     const fmt=d=>d||'—'; // datas ficam em ISO yyyy-mm-dd
-    const novo={nome:f.nome,cargo:f.cargo||'—',depto:f.depto||'—',admissao:fmt(f.admissao),desligamento:fmt(f.desligamento),tipo:f.tipo,aviso:f.aviso,profiles:[...f.profiles],enabledItems:[...S.newEnabled],checks:mkChecks(S.newEnabled),homologacaoData:{data:'',local:'',responsavel:'',obs:''},finalizado:false,criadoEm:new Date().toISOString(),criadoPor:S.session?.name||'—'};
+    const novo={nome:(f.nome||'').toUpperCase(),cargo:(f.cargo||'—').toUpperCase(),depto:(f.depto||'—').toUpperCase(),admissao:fmt(f.admissao),desligamento:fmt(f.desligamento),tipo:f.tipo,aviso:f.aviso,profiles:[...f.profiles],enabledItems:[...S.newEnabled],checks:mkChecks(S.newEnabled),homologacaoData:{data:'',local:'',responsavel:'',obs:''},finalizado:false,criadoEm:new Date().toISOString(),criadoPor:S.session?.name||'—'};
     const ref=await db.collection('processes').add(novo);
     await logHist(ref.id,'create',`Criado por ${novo.criadoPor}`);
     S.showModal=false;showAlert(`✅ Processo criado para ${f.nome}!`);
