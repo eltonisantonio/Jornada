@@ -132,7 +132,7 @@ tr:hover td{background:#f9fcf9}
 .rgt{font-size:11px;opacity:.65;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
 .clh h2{font-size:18px;font-weight:700;margin-bottom:4px}
 .clh p{font-size:13px;opacity:.75}
-.eg{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+.eg{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:14px}
 .ei .el{font-size:10px;opacity:.65;text-transform:uppercase;letter-spacing:.5px}
 .ei .ev{font-size:13px;font-weight:600;margin-top:2px}
 .secb{background:#fff;border-radius:10px;border:1px solid var(--bd);margin-bottom:12px;overflow:hidden}
@@ -289,19 +289,30 @@ function fmtD(str){if(!str)return'—';try{const d=new Date(str+'T12:00');return
 function isoToBR(iso){if(!iso)return'—';try{const[y,m,d]=iso.split('-');return`${d}/${m}/${y}`;}catch{return iso;}}
 // pt-BR (dd/mm/yyyy) → ISO (yyyy-mm-dd) para input[type=date]
 function brToISO(br){if(!br||br==='—')return'';try{const[d,m,y]=br.split('/');return`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;}catch{return'';}}
-function prazoInfo(des){
-  if(!des||des==='—')return{cls:'',lbl:''};
+function parseDateField(des){
+  if(!des||des==='—')return null;
   try{
-    // Aceita tanto ISO (yyyy-mm-dd) quanto pt-BR (dd/mm/yyyy)
-    let dt;
-    if(des.includes('-')){dt=new Date(des+'T12:00');}
-    else{const[d,m,y]=des.split('/');dt=new Date(+y,+m-1,+d);}
-    const diff=Math.ceil((dt-new Date())/(864e5));
-    if(diff<0)return{cls:'pve',lbl:`⚠ ${Math.abs(diff)}d atraso`};
-    if(diff===0)return{cls:'pal',lbl:'⚠ Hoje'};
-    if(diff<=3)return{cls:'pal',lbl:`⚠ ${diff}d`};
-    return{cls:'pok',lbl:`${diff}d`};
-  }catch{return{cls:'',lbl:''};}
+    if(des.includes('-'))return new Date(des+'T12:00');
+    const[d,m,y]=des.split('/');return new Date(+y,+m-1,+d);
+  }catch{return null;}
+}
+function prazoHomolog(des){
+  // Retorna a data limite de homologação (desligamento + 10 dias corridos)
+  const dt=parseDateField(des);
+  if(!dt)return null;
+  const lim=new Date(dt);lim.setDate(lim.getDate()+10);return lim;
+}
+function prazoInfo(des){
+  if(!des||des==='—')return{cls:'',lbl:'',limDate:null};
+  try{
+    const lim=prazoHomolog(des);if(!lim)return{cls:'',lbl:'',limDate:null};
+    const diff=Math.ceil((lim-new Date())/(864e5));
+    const limStr=lim.toLocaleDateString('pt-BR');
+    if(diff<0)return{cls:'pve',lbl:`⚠ Homolog. vencida há ${Math.abs(diff)}d (limite: ${limStr})`,limDate:lim};
+    if(diff===0)return{cls:'pal',lbl:`⚠ Homolog. vence hoje! (${limStr})`,limDate:lim};
+    if(diff<=3)return{cls:'pal',lbl:`⚠ Homolog. em ${diff}d (${limStr})`,limDate:lim};
+    return{cls:'pok',lbl:`Homolog. até ${limStr}`,limDate:lim};
+  }catch{return{cls:'',lbl:'',limDate:null};}
 }
 const RH_SEC={id:'rh',name:'RH / DP',emoji:'📋',color:'#024f2b'};
 function getSec(id){if(id==='rh')return RH_SEC;return S.sectors.find(s=>s.id===id)||{name:id,emoji:'🏢',color:'#666'};}
@@ -500,22 +511,27 @@ function renderChecklist(){
   const isrh=isRH();
   const pg=calcProg(p);const pct=pg.total?Math.round(pg.done/pg.total*100):0;
   const secs=isrh?allSecs():[S.session?.sectorId||''];
-  const{cls,lbl}=prazoInfo(p.desligamento);
+  const{cls,lbl,limDate}=prazoInfo(p.desligamento);
+  const homolVencida=limDate&&limDate<new Date()&&!p.finalizado;
+  const homolUrgente=limDate&&!homolVencida&&Math.ceil((limDate-new Date())/(864e5))<=3&&!p.finalizado;
   return`
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
     <button class="bs" id="btn-back">← Voltar</button>
     ${isrh&&!p.finalizado?'<button class="ab" id="btn-edit-items">✏️ Gerenciar itens</button>':''}
     <button class="ab" id="btn-hist">🕐 Histórico</button>
   </div>
+  ${homolVencida?`<div class="al alr">⛔ Prazo de homologação VENCIDO! Limite era ${limDate.toLocaleDateString('pt-BR')} (10 dias após o desligamento).</div>`:''}
+  ${homolUrgente?`<div class="al alw">⚠️ Prazo de homologação se encerrando em ${Math.ceil((limDate-new Date())/(864e5))}d — até ${limDate.toLocaleDateString('pt-BR')}.</div>`:''}
   <div class="clh">
     <div class="rgt">Raguife · Checklist de Desligamento</div>
-    <h2>${p.nome}${lbl?` <span style="font-size:13px;opacity:.8">${lbl}</span>`:''}</h2>
+    <h2>${p.nome}</h2>
     <p>${p.cargo||'—'} · ${p.depto||'—'} · ${p.tipo||'—'}</p>
     <div class="eg">
       <div class="ei"><div class="el">Admissão</div><div class="ev">${isoToBR(p.admissao)}</div></div>
       <div class="ei"><div class="el">Desligamento</div><div class="ev">${isoToBR(p.desligamento)}</div></div>
       <div class="ei"><div class="el">Perfil</div><div class="ev">${(p.profiles||[]).map(k=>getProf(k).name).join(', ')||'—'}</div></div>
       <div class="ei"><div class="el">Progresso</div><div class="ev">${pg.done}/${pg.total} (${pct}%)</div></div>
+      <div class="ei"><div class="el">Prazo Homologação</div><div class="ev ${cls}" style="font-size:12px">${limDate?limDate.toLocaleDateString('pt-BR'):'—'}</div></div>
     </div>
   </div>
   ${secs.map(sec=>{
@@ -545,7 +561,7 @@ function renderChecklist(){
   ${isrh&&pg.done===pg.total&&!p.finalizado?`
   <div class="hob"><div class="hot">⚖️ Dados da Homologação</div>
     <div class="fr">
-      <div class="fi"><label>Data</label><input type="date" id="hd" value="${p.homologacaoData?.data||''}"/></div>
+      <div class="fi"><label>Data</label><input type="date" id="hd" value="${p.homologacaoData?.data||(()=>{const lim=prazoHomolog(p.desligamento);return lim?lim.toISOString().split('T')[0]:''})()}"/></div>
       <div class="fi"><label>Local</label><input type="text" id="hl" value="${esc(p.homologacaoData?.local||'')}" placeholder="ex: Sede / Sindicato"/></div>
       <div class="fi"><label>Responsável RH</label><input type="text" id="hr" value="${esc(p.homologacaoData?.responsavel||'')}"/></div>
       <div class="fi"><label>Observações</label><input type="text" id="ho" value="${esc(p.homologacaoData?.obs||'')}"/></div>
